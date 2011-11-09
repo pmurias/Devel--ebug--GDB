@@ -1,0 +1,6 @@
+#!perl
+use strict;
+use warnings;
+use Devel::ebug::GDB;
+Devel::ebug::GDB::initialise();
+
