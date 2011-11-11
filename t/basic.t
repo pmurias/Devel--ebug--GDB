@@ -10,7 +10,7 @@ $ebug->backend("$^X -Ilib bin/ebug_backend_gdb");
 $ebug->program("t/calc");
 $ebug->load;
 
-is($ebug->line,10);
+is( $ebug->line, 10 );
 
 # Let's step through the program, and check that we step through the
 # lines in the right order
