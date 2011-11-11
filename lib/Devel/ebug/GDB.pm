@@ -17,7 +17,6 @@ my $context = {
   stack        => [],
   watch_points => [],
 
-  codeline   => 0,
   filename   => 'nowhere',
   finished   => 0,
   line       => 0,
@@ -32,6 +31,32 @@ my $context = {
 my %commands = (
     ping => \&ping
 );
+
+sub get_pos {
+    warn "getting_pos\n";
+    my ($context,$gdb) = @_;
+    my $bt = $gdb->get("bt 1");
+    use Data::Printer;
+#    p $context;
+    warn "bt: <$bt>";
+    ($context->{subroutine},$context->{filename},$context->{line}) = 
+    $bt =~ m/
+        (?{print "REGEXP 1\n"})
+        \#\d+ \s+
+        (?{print "REGEXP 2\n"})
+        (\w+) \s+
+        (?{print "REGEXP 3\n"})
+        \(\) \s+
+        (?{print "REGEXP 4\n"})
+        at \s+ 
+        (?{print "REGEXP 5\n"})
+        (.*):(\d+)
+/x;
+    print "func: $1 $2 $3\n";
+    p $context;
+
+    #0  main () at t/calc.c:10
+}
 
 sub initialise {
   my ($program) = @_;
@@ -63,6 +88,12 @@ sub initialise {
   my $gdb = new Devel::GDB(-params=>["-q"]);
   my $file = $gdb->get("file $program"); # TODO: quote
   warn $file;
+
+  $gdb->get("start");
+
+  get_pos($context,$gdb);
+
+
   loop();
 
 }

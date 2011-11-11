@@ -10,7 +10,7 @@ sub basic {
   warn "loading basic plugin\n";
   my ($req, $context) = @_;
   return {
-    codeline   => $context->{codeline},
+    codeline   => $context->{line},
     filename   => $context->{filename},
     finished   => $context->{finished},
     line       => $context->{line},
