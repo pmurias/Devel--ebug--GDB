@@ -11,6 +11,8 @@ $ebug->program("t/calc");
 $ebug->load;
 
 is( $ebug->line, 10 );
+is( $ebug->codeline, "    int q = 1;" );
+
 
 # Let's step through the program, and check that we step through the
 # lines in the right order

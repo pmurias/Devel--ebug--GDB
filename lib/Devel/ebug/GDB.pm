@@ -96,6 +96,13 @@ sub get_pos {
     $self->filename($2);
     $self->line($3);
 }
+sub get_codeline {
+    my ($self) = @_;
+    my $line = $self->gdb->get("l ".$self->line.",".$self->line);
+    $line =~ s/^\d+\t//;
+    chomp($line);
+    $self->codeline($line);
+}
 
 sub register_plugins {
     my ($self) = @_;
@@ -129,6 +136,7 @@ sub start_gdb {
     $self->gdb->get("start");
 
     $self->get_pos();
+    $self->get_codeline();
 
     $self->loop();
 }
