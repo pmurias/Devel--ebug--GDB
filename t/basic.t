@@ -6,7 +6,7 @@ use Test::More;
 use Devel::ebug;
 
 my $ebug = Devel::ebug->new;
-$ebug->backend("$^X bin/ebug_backend_gdb");
+$ebug->backend("$^X -Ilib bin/ebug_backend_gdb");
 $ebug->program("t/calc");
 $ebug->load;
 

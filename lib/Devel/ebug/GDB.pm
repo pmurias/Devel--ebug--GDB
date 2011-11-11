@@ -1,6 +1,7 @@
 package Devel::ebug::GDB;
 use strict;
 use warnings;
+use Moo;
 use IO::Socket::INET;
 use String::Koremutake;
 use YAML::Syck;
@@ -9,57 +10,51 @@ use Module::Pluggable
   search_path => 'Devel::ebug::GDB::Plugin',
   require     => 1;
 
+###### GDB independent part
 
-my $context = {
-  finished     => 0,
-  initialise   => 1,
-  mode         => "step",
-  stack        => [],
-  watch_points => [],
+has socket=>(is=>'rw');
+has commands=>(is=>'ro',default=>sub {{}});
 
-  filename   => 'nowhere',
-  finished   => 0,
-  line       => 0,
-  package    => 'Nowhere',
-};
-
-# Commands that the back end can respond to
-# Set record if the command changes start and should thus be recorded
-# in order for undo to work properly
-
-
-my %commands = (
-    ping => \&ping
-);
-
-sub get_pos {
-    warn "getting_pos\n";
-    my ($context,$gdb) = @_;
-    my $bt = $gdb->get("bt 1");
-    use Data::Printer;
-#    p $context;
-    warn "bt: <$bt>";
-    ($context->{subroutine},$context->{filename},$context->{line}) = 
-    $bt =~ m/
-        (?{print "REGEXP 1\n"})
-        \#\d+ \s+
-        (?{print "REGEXP 2\n"})
-        (\w+) \s+
-        (?{print "REGEXP 3\n"})
-        \(\) \s+
-        (?{print "REGEXP 4\n"})
-        at \s+ 
-        (?{print "REGEXP 5\n"})
-        (.*):(\d+)
-/x;
-    print "func: $1 $2 $3\n";
-    p $context;
-
-    #0  main () at t/calc.c:10
+sub loop {
+    my ($self) = @_;
+    while (1) {
+        my $req     = $self->get();
+        my $command = $req->{command};
+        my $sub = $self->commands->{$command};
+        if (defined $sub) {
+          $self->put($sub->($req, $self));
+        } else {
+            die "unknown command $command";
+        }
+    }
 }
 
-sub initialise {
-  my ($program) = @_;
+sub put {
+  my ($self,$res) = @_;
+  my $data = unpack("h*", Dump($res));
+  $self->socket->print($data . "\n");
+}
+
+sub get {
+  my ($self) = @_;
+  exit unless $self->socket; # TODO: better error handling
+  my $data = $self->socket->getline;
+  my $req = Load(pack("h*", $data));
+  return $req;
+}
+
+sub ping {
+  my($self,$req) = @_;
+  my $secret = $ENV{SECRET};
+  die "Did not pass secret" unless $req->{secret} eq $secret;
+  $ENV{SECRET} = "";
+  return {
+    version => 0.52,
+  }
+}
+
+sub socket_accept {
+  my ($self) = @_;
   my $k      = String::Koremutake->new;
   my $int    = $k->koremutake_to_integer($ENV{SECRET});
   my $port   = 3141 + ($int % 1024);
@@ -72,67 +67,72 @@ sub initialise {
     Reuse     => 1,
     )
     || die $!;
+    $server->accept;
+}
 
+###########################
+
+has program=>(is=>'ro');
+
+has finished=>(is=>'rw',default=>sub {0});
+has line=>(is=>'rw');
+has filename=>(is=>'rw',default=>sub {'?'});
+has package=>(is=>'rw',default=>sub {'?'});
+has subroutine=>(is=>'rw',default=>sub {'?'});
+
+has codeline=>(is=>'rw',default=>sub {'?'});
+
+has gdb=>(is=>'rw');
+
+sub get_pos {
+    my ($self) = @_;
+    my $bt = $self->gdb->get("bt 1");
+    $bt =~ m/
+        \#\d+ \s+
+        (\w+) \s+
+        \(\) \s+
+        at \s+ 
+        (.*):(\d+)
+    /x;
+    $self->subroutine($1);
+    $self->filename($2);
+    $self->line($3);
+}
+
+sub register_plugins {
+  my ($self) = @_;
   foreach my $plugin (__PACKAGE__->plugins) {
     my $sub = $plugin->can("register_commands");
     next unless $sub;
     my %new = &$sub;
     foreach my $command (keys %new) {
-#      warn "registering $command";
-      $commands{$command} = $new{$command};
+      $self->commands->{$command} = $new{$command};
     }
   }
-
-  $context->{socket} = $server->accept;
-
-  my $gdb = new Devel::GDB(-params=>["-q"]);
-  my $file = $gdb->get("file $program"); # TODO: quote
-  warn $file;
-
-  $gdb->get("start");
-
-  get_pos($context,$gdb);
-
-
-  loop();
-
-}
-sub loop {
-    while (1) {
-        my $req     = get();
-        my $command = $req->{command};
-        my $sub = $commands{$command};
-        if (defined $sub) {
-          put($sub->($req, $context));
-        } else {
-            die "unknown command $command";
-        }
-    }
 }
 
-sub put {
-  my ($res) = @_;
-  my $data = unpack("h*", Dump($res));
-  $context->{socket}->print($data . "\n");
+sub BUILD {
+    my ($self) = @_;
+    $self->commands->{ping} = sub {$self->ping(@_)};
+    $self->register_plugins();
+}
+sub start {
+    my ($self) = @_;
+    $self->socket($self->socket_accept);
+    $self->start_gdb();
 }
 
-sub get {
-  exit unless $context->{socket};
-  my $data = $context->{socket}->getline;
-  my $req = Load(pack("h*", $data));
-  return $req;
-}
+sub start_gdb {
+  my ($self) = @_;
+  $self->gdb(new Devel::GDB(-params=>["-q"]));
+  my $file = $self->gdb->get("file ".$self->program); # TODO: quote
 
-initialise(@ARGV);
+  $self->gdb->get("start");
 
-sub ping {
-  my($req, $context) = @_;
-  my $secret = $ENV{SECRET};
-  die "Did not pass secret" unless $req->{secret} eq $secret;
-  $ENV{SECRET} = "";
-  return {
-    version => 0.52,
-  }
+  $self->get_pos();
+
+
+  $self->loop();
 }
 
 1;

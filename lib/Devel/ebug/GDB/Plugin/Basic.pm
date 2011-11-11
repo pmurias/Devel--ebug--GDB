@@ -7,21 +7,15 @@ sub register_commands {
 }
 
 sub basic {
-  warn "loading basic plugin\n";
   my ($req, $context) = @_;
   return {
-    codeline   => $context->{line},
-    filename   => $context->{filename},
-    finished   => $context->{finished},
-    line       => $context->{line},
-    package    => $context->{package},
-    subroutine => subroutine($req, $context),
+    codeline   => $context->codeline,
+    filename   => $context->filename,
+    finished   => $context->finished,
+    line       => $context->line,
+    package    => $context->package,
+    subroutine => $context->subroutine
   };
-}
-
-sub subroutine {
-  my ($req, $context) = @_;
-  return '?';
 }
 
 1;
